@@ -1,0 +1,120 @@
+*******************************************
+基于linux (fedora 17)的QT串口通信实例
+by sunke 20121204
+*******************************************
+
+最近需要编写一个基于linux的QT串口通信程序，进行简单的数据收发功能，参考网上的例子之后，发现大多是基于windows开发的，只对linux环境的开发做了简单的介绍，所以本文章直接以linux环境来讲述QT串口开发实例。
+
+我的操作环境及QT编辑/编译器版本如下：
+OS: fedora 17 (linux-3.3.4)
+QT: Qt Creator 1.3.1 + Qt 4.6.1
+
+开发步骤如下：
+1.Qt中并没有特定的串口控制类，所以需要下载QT第三方写的qextserialport类
+下载地址为 http://sourceforge.net/projects/qextserialport/files/
+下载到的文件为 qextserialport-1.2win-alpha.zip
+
+2.解压下载的文件到当前目录
+# unzip qextserialport-1.2win-alpha.zip
+这里不对压缩包内的详细信息及qextserialport类的结构做详细介绍，直接说明需要用到的源文件
+
+linux下：
+qextserialbase.cpp qextserialbase.h posix_qextserialport.cpp posix_qextserialport.h
+
+windows下：
+qextserialbase.cpp qextserialbase.h win_qextserialport.cpp win_qextserialport.h
+
+3.打开Qt Creator集成开发环境，新建工程Qt4 Gui Application ，工程名为com ，其他默认即可。
+
+4.将上述linux下需要用到的4个文件拷贝至com工程目录下，然后将该4个文件添加至工程。
+
+5.将整个工程编译，会报错如下：
+error: 'struct PortSettings' has no member named 'Timeout_Sec'
+错误所在函数为 setTimeout(Settings.Timeout_Sec, Settings.Timeout_Millisec);
+我们直接将第一个参数删除即可，即为 setTimeout(Settings.Timeout_Millisec);
+重新编译工程成功。
+
+6.点击mainwindow.ui，在窗口中添加如下几个控件，因控件较少，同时为了操作方便，我们保持各部件的属性为默认值
+Text Browser 部件用来显示接收到的数据
+Line Edit部件用来输入要发送的数据
+Push Button按钮用来发送数据
+
+7.在mainwindow.h文件中进行对象及函数声明
+7-1.添加头文件包含
+#include "posix_qextserialport.h"
+#include <QTimer>	//控制串口读写需要用到定时器 【此次不同于windows下的开发，非常重要】
+
+6-2.在private中声明对象
+Posix_QextSerialPort *myCom;	//串口
+QTimer *readTimer;	//定时器 【此次不同于windows下的开发，非常重要】
+7-3.声明私有槽函数：
+private slots:
+    void on_pushButton_clicked(); //“发送数据”按钮 槽函数
+    void readMyCom(); //读取串口 槽函数
+
+8.在mainwindow.cpp文件中添加实现代码
+在构造函数中添加代码，完成后，构造函数内容如下：
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow){
+    ui->setupUi(this);
+
+    //myCom = new Win_QextSerialPort("COM1",QextSerialBase::EventDriven);
+    //【windows下使用】定义串口对象，指定串口名和查询模式，这里使用事件驱动EventDriven
+
+    myCom = new Posix_QextSerialPort("/dev/ttyUSB0",QextSerialBase::Polling);
+    //【linux下使用】定义串口对象，指定串口名和查询模式,这里使用Polling，若报错，拔插USB
+    //【此次不同于windows下的开发，非常重要】
+
+    myCom ->open(QIODevice::ReadWrite);
+    //以读写方式打开串口
+
+    myCom->setBaudRate(BAUD9600);
+    //波特率设置，我们设置为9600
+
+    myCom->setDataBits(DATA_8);
+    //数据位设置，我们设置为8位数据位
+
+    myCom->setParity(PAR_NONE);
+    //奇偶校验设置，我们设置为无校验
+
+    myCom->setStopBits(STOP_1);
+    //停止位设置，我们设置为1位停止位
+
+    myCom->setFlowControl(FLOW_OFF);
+    //数据流控制设置，我们设置为无数据流控制
+
+    myCom->setTimeout(200);
+    //延时设置，我们设置为延时200ms,如果设置为500ms的话，会造成程序无响应，原因未知
+
+    //connect(myCom,SIGNAL(readyRead()),this,SLOT(readMyCom()));
+    //【windows下使用】信号和槽函数关联，当串口缓冲区有数据时，进行读串口操作,linux不支持，只能用定时
+
+    readTimer = new QTimer(this); 
+    //设置读取计时器
+    readTimer->start(100);
+    //设置延时为100ms
+    connect(readTimer,SIGNAL(timeout()),this,SLOT(readMyCom()));
+    //【linux下使用】信号和槽函数关联，当达到定时时间时，进行读串口操作
+    //【以上三条与君不同于windows下的开发，非常重要】
+}
+
+实现槽函数：
+void MainWindow::readMyCom() //读取串口数据并显示出来
+{
+    QByteArray temp = myCom->readAll();
+    //读取串口缓冲区的所有数据给临时变量temp
+    ui->textBrowser->insertPlainText(temp);
+    //将串口的数据显示在窗口的文本浏览器中
+}
+void MainWindow::on_pushButton_clicked() //发送数据
+{
+    myCom->write(ui->lineEdit->text().toAscii());
+    //以ASCII码形式将数据写入串口
+}
+
+9.编译工程，运行程序成功。
+
+ps:本实例完成了linux下最基本的QT串口实例，如需扩展其他功能（如：设置波特率、串口号、自定义发送内容），请参考网上其他教程
+
+后续我会将本程序移植到基于linux+arm的开发板上运行。
